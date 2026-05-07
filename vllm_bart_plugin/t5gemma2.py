@@ -300,6 +300,23 @@ class T5Gemma2Attention(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.k_proj",
         )
+        self.v_proj = ColumnParallelLinear(
+            hidden_size,
+            self.total_num_kv_heads * self.head_dim,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.v_proj",
+        )
+        self.o_proj = RowParallelLinear(
+            self.total_num_heads * self.head_dim,
+            hidden_size,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.o_proj",
+        )
+        self.q_norm = GemmaRMSNorm(self.head_dim, eps=1e-6)
+        self.k_norm = GemmaRMSNorm(self.head_dim, eps=1e-6)
+
         if rope_parameters:
             self.rotary_emb = get_rope(
                 self.head_dim,
