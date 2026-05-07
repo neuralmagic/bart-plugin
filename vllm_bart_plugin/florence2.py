@@ -15,8 +15,13 @@ from transformers.utils import logging
 
 from vllm.model_executor.layers.attention import Attention
 from vllm.v1.attention.backend import AttentionType
-from vllm.model_executor.layers.attention.cross_attention import CrossAttention
-from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
+try:
+    from vllm.model_executor.layers.attention.cross_attention import CrossAttention
+    from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
+except ImportError:
+    # These were moved after vLLM 0.13; try the legacy path
+    from vllm.attention.layers.cross_attention import CrossAttention
+    from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
 from vllm.config import CacheConfig, VllmConfig
 from vllm.config.lora import LoRAConfig
 from vllm.config.multimodal import BaseDummyOptions
