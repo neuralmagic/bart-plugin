@@ -21,6 +21,7 @@ def register_bart_model() -> None:
     try:
         from vllm.logger import init_logger
         from vllm.model_executor.models.registry import ModelRegistry
+        from vllm_bart_plugin.runtime_patches import install_runtime_patches
 
         logger = init_logger(__name__)
         # Register BartForConditionalGeneration with the ModelRegistry
@@ -33,6 +34,7 @@ def register_bart_model() -> None:
             "Florence2ForConditionalGeneration",
             "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
         )
+        install_runtime_patches()
 
         logger.info("Successfully registered BART model with vLLM")
 
