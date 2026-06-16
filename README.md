@@ -10,7 +10,9 @@ BART is an encoder-decoder model that is particularly effective for sequence-to-
 
 ### Prerequisites
 
-This plugin requires [uv](https://docs.astral.sh/uv/) for package management. If you don't have it installed:
+This plugin requires vLLM 0.23.0 or newer and
+[uv](https://docs.astral.sh/uv/) for package management. If you don't have uv
+installed:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -244,5 +246,5 @@ If vLLM doesn't recognize the BART model:
 Make sure all dependencies are installed:
 
 ```bash
-uv pip install vllm torch transformers
+uv pip install "vllm>=0.23.0" torch transformers
 ```
