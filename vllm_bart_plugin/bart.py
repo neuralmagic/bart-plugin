@@ -34,24 +34,13 @@ from vllm.config import CacheConfig, VllmConfig
 from vllm.config.lora import LoRAConfig
 from vllm.config.multimodal import BaseDummyOptions
 from vllm.distributed import get_tensor_model_parallel_world_size
+from vllm.inputs import MultiModalDataDict
+from vllm.model_executor.layers.attention import Attention
+from vllm.model_executor.layers.attention.cross_attention import CrossAttention
+from vllm.model_executor.layers.attention.mm_encoder_attention import (
+    MMEncoderAttention,
+)
 from vllm.model_executor.layers.activation import get_act_fn
-
-IS_LEGACY=False
-try:
-    from vllm.v1.attention.backend import AttentionType
-    from vllm.model_executor.layers.attention import Attention
-    from vllm.model_executor.layers.attention.cross_attention import CrossAttention
-    from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
-    from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
-except ImportError:
-    # These were moved after vLLM 0.13; try the legacy path
-    from vllm.attention.backends.abstract import AttentionType
-    from vllm.attention.layer import Attention
-    from vllm.attention.layers.cross_attention import CrossAttention
-    from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
-    from vllm.multimodal.profiling import BaseDummyInputsBuilder
-    IS_LEGACY=True
-
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     QKVParallelLinear,
@@ -88,18 +77,15 @@ from vllm.multimodal.parse import (
     MultiModalDataParser,
     ProcessorBatchItems,
 )
-
-try:
-    from vllm.inputs import MultiModalDataDict
-except ImportError:
-    from vllm.multimodal.inputs import MultiModalDataDict  # type: ignore[no-redef]
 from vllm.multimodal.processing import (
     BaseProcessingInfo,
     EncDecMultiModalProcessor,
     PromptUpdate,
 )
+from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
+from vllm.v1.attention.backend import AttentionType
 
 logger = logging.get_logger(__name__)
 
@@ -954,20 +940,10 @@ class BartProcessingInfo(BaseProcessingInfo):
     def get_data_parser(self) -> MultiModalDataParser:
         return TextDataParser()
 
-
-# vLLM >=0.18 moved tokenization defaults from a global enc-dec override
-# (InputPreprocessor._get_tokenization_kw) into per-model ProcessingInfo.
-# The old code forced add_special_tokens=False for every is_encoder_decoder
-# model; replicate that here so the renderer does not inject extra BOS/EOS
-# into the decoder prompt.  On vLLM <0.18 the method does not exist on the
-# base class and is not needed (the global override handles it).
-if hasattr(BaseProcessingInfo, "get_default_tok_params"):
-
-    def _bart_get_default_tok_params(self):
-        return super(BartProcessingInfo, self).get_default_tok_params() \
-            .with_kwargs(add_special_tokens=False)
-
-    BartProcessingInfo.get_default_tok_params = _bart_get_default_tok_params  # type: ignore[attr-defined]
+    def get_default_tok_params(self):
+        return super().get_default_tok_params().with_kwargs(
+            add_special_tokens=False
+        )
 
 
 class BartDummyInputsBuilder(BaseDummyInputsBuilder[BartProcessingInfo]):
@@ -1018,7 +994,6 @@ class TextDataParser(MultiModalDataParser):
         data: ModalityData[str],
     ) -> ModalityDataItems[Any, Any] | None:
         """Parse text data for BART."""
-        # _is_empty was removed in vLLM >=0.18; handle emptiness inline
         if data is None or not len(data):
             return TextProcessorItems(None)
 
@@ -1039,36 +1014,11 @@ class TextDataParser(MultiModalDataParser):
 class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
     """Multimodal processor for BART encoder-decoder models."""
 
-    def __init__(self, *args, **kwargs):
-        # HACK: v13 needs to define _get_data_parser, but v16 throws in __init__
-        # if this class has _get_data_parser as an attribute, so for now,
-        # we conditionally ist based on which import path was taken, since
-        # those are also changes that were needed for v13.
-        if IS_LEGACY:
-            self._get_data_parser = self.build_data_parser
-        super().__init__(*args, **kwargs)
-
     def create_encoder_prompt(
         self,
         prompt: str | list[int],
         mm_items: MultiModalDataItems,
     ) -> str | list[int]:
-        # vLLM compatibility:
-        # - Legacy (<0.18): prompt is encoder text (str) — tokenize directly.
-        # - Modern (>=0.18): prompt is decoder token IDs or empty str from
-        #   profiling — return a single [0] placeholder that _get_prompt_updates
-        #   will expand to the real encoder token count.  The placeholder IDs
-        #   are structural (KV-cache sizing); the actual encoder computation
-        #   uses encoder_input_ids from mm_kwargs.
-        if isinstance(prompt, str) and prompt:
-            tokenizer = self.info.get_tokenizer()
-            tokens = tokenizer(
-                prompt,
-                add_special_tokens=False,
-                return_tensors="pt",
-            )["input_ids"].flatten()
-            return tokens.tolist()
-
         return [0]
 
     def create_decoder_prompt(
@@ -1095,7 +1045,7 @@ class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
           build ``prompt_token_ids``)
 
         Encoder text is always tokenized with ``add_special_tokens=False`` to
-        match v0.16 behaviour and stay consistent with ``_get_prompt_updates``.
+        stay consistent with ``_get_prompt_updates``.
         """
         from transformers.feature_extraction_utils import BatchFeature
 
@@ -1117,10 +1067,11 @@ class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
             result["encoder_input_ids"] = encoder_tokenized["input_ids"]
 
         # Always produce input_ids for the decoder prompt.
-        # In vLLM >=0.18 the rendering pipeline may call _call_hf_processor
-        # with an already-tokenized prompt (a list of ints) instead of a str.
-        # Handle both cases.
-        if isinstance(prompt, (list, tuple)) and len(prompt) > 0 and isinstance(prompt[0], int):
+        if (
+            isinstance(prompt, (list, tuple))
+            and len(prompt) > 0
+            and isinstance(prompt[0], int)
+        ):
             result["input_ids"] = torch.tensor([prompt])
         else:
             prompt_tokenized = tokenizer(

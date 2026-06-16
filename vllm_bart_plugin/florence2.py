@@ -13,21 +13,16 @@ from torch import nn
 from transformers import BartConfig, BatchFeature, BartTokenizer, PretrainedConfig
 from transformers.utils import logging
 
-try:
-    from vllm.v1.attention.backend import AttentionType
-    from vllm.model_executor.layers.attention import Attention
-    from vllm.model_executor.layers.attention.cross_attention import CrossAttention
-    from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
-except ImportError:
-    # These were moved after vLLM 0.13; try the legacy path
-    from vllm.attention.backends.abstract import AttentionType
-    from vllm.attention.layer import Attention
-    from vllm.attention.layers.cross_attention import CrossAttention
-    from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
 from vllm.config import CacheConfig, VllmConfig
 from vllm.config.lora import LoRAConfig
 from vllm.config.multimodal import BaseDummyOptions
 from vllm.distributed import get_tensor_model_parallel_world_size
+from vllm.inputs import ModalityData, MultiModalDataDict
+from vllm.model_executor.layers.attention import Attention
+from vllm.model_executor.layers.attention.cross_attention import CrossAttention
+from vllm.model_executor.layers.attention.mm_encoder_attention import (
+    MMEncoderAttention,
+)
 from vllm.model_executor.layers.activation import get_act_fn
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -41,7 +36,6 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.inputs import ModalityData, MultiModalDataDict
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (
     MultiModalFieldConfig,
@@ -61,15 +55,23 @@ from vllm.multimodal.processing import (
     PromptInsertion,
     PromptIndexTargets,
 )
-try:
-    from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
-except ImportError:
-    from vllm.multimodal.profiling import BaseDummyInputsBuilder
+from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
+from vllm.v1.attention.backend import AttentionType
 
-from vllm.model_executor.models.interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsQuant
-from vllm.model_executor.models.utils import AutoWeightsLoader, WeightsMapper, cast_overflow_tensors, maybe_prefix, flatten_bn
+from vllm.model_executor.models.interfaces import (
+    MultiModalEmbeddings,
+    SupportsMultiModal,
+    SupportsQuant,
+)
+from vllm.model_executor.models.utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    cast_overflow_tensors,
+    flatten_bn,
+    maybe_prefix,
+)
 
 from vllm_bart_plugin.bart import BartDecoder, BartEncoder, BartParallelLMHead, BartScaledWordEmbedding
 

@@ -178,14 +178,13 @@ export VLLM_BART_ENCODER_MAX_SEQ_PADDING=1
 Notes:
 - Requires `pad_token_id` to be set in the HF config. If it is missing, the plugin will log a warning and keep the optimization disabled.
 
-### `VLLM_BART_FORCE_MRV2`
+### MRV2
 
-BART-family models default to MRV2 by setting `VLLM_USE_V2_MODEL_RUNNER=1`
-when the plugin is loaded. To opt out for debugging:
+BART-family models are MRV2-only. The plugin sets
+`VLLM_USE_V2_MODEL_RUNNER=1` when it is loaded.
 
 ```bash
-export VLLM_BART_FORCE_MRV2=0
-export VLLM_USE_V2_MODEL_RUNNER=0
+export VLLM_USE_V2_MODEL_RUNNER=1
 ```
 
 

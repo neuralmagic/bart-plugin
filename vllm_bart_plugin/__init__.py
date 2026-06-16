@@ -9,7 +9,6 @@ import sys
 
 __version__ = "0.1.0"
 
-_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 _MODEL_REGISTRATIONS = (
     (
         "BartForConditionalGeneration",
@@ -31,14 +30,8 @@ def _clear_vllm_env_cache() -> None:
 
 
 def force_mrv2_model_runner() -> None:
-    """Default BART-family models to MRV2 unless explicitly disabled."""
-    disabled = (
-        os.getenv("VLLM_BART_FORCE_MRV2", "1").strip().lower()
-        in _FALSE_ENV_VALUES
-    )
-    if not disabled:
-        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
-
+    """BART-family models require MRV2."""
+    os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     _clear_vllm_env_cache()
 
 
