@@ -40,7 +40,6 @@ class BartEncoderDecoderModelState(DefaultModelState):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.beam_sampler: Any | None = None
         self.encoder_outputs: list[torch.Tensor] = []
         self.encoder_seq_lens_gpu = torch.zeros(
             self.max_num_reqs, dtype=torch.int32, device=self.device
@@ -50,51 +49,6 @@ class BartEncoderDecoderModelState(DefaultModelState):
             "max_source_positions",
             self.max_model_len,
         )
-
-    def add_request(self, req_index: int, new_req_data: Any) -> None:
-        super().add_request(req_index, new_req_data)
-        if self.beam_sampler is None:
-            return
-        prompt_token_ids = (
-            new_req_data.prefill_token_ids or new_req_data.prompt_token_ids
-        )
-        self.beam_sampler.register_request(
-            new_req_data.req_id,
-            new_req_data.sampling_params,
-            prompt_token_ids,
-        )
-
-    def remove_request(self, req_id: str) -> None:
-        if self.beam_sampler is not None:
-            self.beam_sampler.remove_request(req_id)
-
-    def custom_sampler(self, sampler: Any) -> tuple[Any, Any] | None:
-        try:
-            from vllm_beam_search.mrv2_sampler import BeamSearchMRV2Sampler
-        except ModuleNotFoundError as exc:
-            if exc.name and exc.name.startswith("vllm_beam_search"):
-                return None
-            raise
-
-        self.beam_sampler = BeamSearchMRV2Sampler(
-            sampler,
-            self.vllm_config,
-            self.device,
-        )
-        block_tables = getattr(self, "_vllm_beam_block_tables", None)
-        self_attn_groups = getattr(self, "_vllm_beam_self_attn_groups", ())
-        if block_tables is not None:
-            self.beam_sampler.set_block_tables(block_tables, self_attn_groups)
-        return self.beam_sampler, None
-
-    def postprocess_state(
-        self,
-        idx_mapping: torch.Tensor,
-        num_sampled: torch.Tensor,
-    ) -> None:
-        super().postprocess_state(idx_mapping, num_sampled)
-        if self.beam_sampler is not None:
-            self.beam_sampler.apply_pending_rewrites()
 
     def get_mm_embeddings(
         self,
