@@ -1,5 +1,7 @@
 """Tests for BART MRV2 config defaults."""
 
+from types import SimpleNamespace
+
 import pytest
 
 import vllm.config.vllm as vllm_config_module
@@ -30,8 +32,14 @@ def test_register_bart_config_marks_architectures_as_default_mrv2(monkeypatch):
         )
 
 
-def test_bart_config_rejects_explicit_mrv2_disable(monkeypatch):
-    monkeypatch.setenv("VLLM_USE_V2_MODEL_RUNNER", "0")
-
+def test_bart_config_rejects_non_mrv2_runner():
     with pytest.raises(ValueError, match="require the V2 model runner"):
-        BartMRV2Config.verify_and_update_config(None)
+        BartMRV2Config.verify_and_update_config(
+            SimpleNamespace(use_v2_model_runner=False)
+        )
+
+
+def test_bart_config_accepts_mrv2_runner():
+    BartMRV2Config.verify_and_update_config(
+        SimpleNamespace(use_v2_model_runner=True)
+    )

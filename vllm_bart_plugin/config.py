@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import vllm.config.vllm as vllm_config_module
-from vllm import envs
 from vllm.model_executor.models.config import (
     MODELS_CONFIG_MAP,
     VerifyAndUpdateConfig,
@@ -26,10 +25,9 @@ class BartMRV2Config(VerifyAndUpdateConfig):
 
     @staticmethod
     def verify_and_update_config(vllm_config: "VllmConfig") -> None:
-        if envs.VLLM_USE_V2_MODEL_RUNNER is False:
+        if not vllm_config.use_v2_model_runner:
             raise ValueError(
-                "BART-family models require the V2 model runner; unset "
-                "VLLM_USE_V2_MODEL_RUNNER or set it to 1."
+                "BART-family models require the V2 model runner."
             )
 
 
