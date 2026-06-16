@@ -182,12 +182,8 @@ Notes:
 
 ### MRV2
 
-BART-family models are MRV2-only. The plugin sets
-`VLLM_USE_V2_MODEL_RUNNER=1` when it is loaded.
-
-```bash
-export VLLM_USE_V2_MODEL_RUNNER=1
-```
+BART-family models are MRV2-only. The plugin registers BART and Florence-2
+architectures as default-MRV2 models through vLLM config hooks.
 
 
 ## Development

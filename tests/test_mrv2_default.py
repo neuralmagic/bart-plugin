@@ -1,36 +1,37 @@
-"""Tests for BART MRV2 runner defaults."""
+"""Tests for BART MRV2 config defaults."""
 
-import os
-import sys
-import types
+import pytest
 
-from vllm_bart_plugin import force_mrv2_model_runner
+import vllm.config.vllm as vllm_config_module
+from vllm.model_executor.models.config import MODELS_CONFIG_MAP
+from vllm_bart_plugin.config import (
+    BART_ARCHITECTURES,
+    BartMRV2Config,
+    register_bart_config,
+)
 
 
-def test_force_mrv2_model_runner_sets_vllm_env(monkeypatch):
+def test_register_bart_config_marks_architectures_as_default_mrv2(monkeypatch):
+    monkeypatch.setattr(
+        vllm_config_module,
+        "DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES",
+        frozenset({"LlamaForCausalLM"}),
+    )
+    for architecture in BART_ARCHITECTURES:
+        monkeypatch.delitem(MODELS_CONFIG_MAP, architecture, raising=False)
+
+    register_bart_config()
+
+    for architecture in BART_ARCHITECTURES:
+        assert MODELS_CONFIG_MAP[architecture] is BartMRV2Config
+        assert (
+            architecture
+            in vllm_config_module.DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES
+        )
+
+
+def test_bart_config_rejects_explicit_mrv2_disable(monkeypatch):
     monkeypatch.setenv("VLLM_USE_V2_MODEL_RUNNER", "0")
 
-    force_mrv2_model_runner()
-
-    assert os.environ["VLLM_USE_V2_MODEL_RUNNER"] == "1"
-
-
-def test_force_mrv2_model_runner_clears_vllm_env_cache(monkeypatch):
-    cleared = False
-
-    def fake_getattr(_name):
-        raise AttributeError
-
-    def cache_clear():
-        nonlocal cleared
-        cleared = True
-
-    fake_getattr.cache_clear = cache_clear
-    fake_envs = types.ModuleType("vllm.envs")
-    fake_envs.__getattr__ = fake_getattr
-
-    monkeypatch.setitem(sys.modules, "vllm.envs", fake_envs)
-
-    force_mrv2_model_runner()
-
-    assert cleared
+    with pytest.raises(ValueError, match="require the V2 model runner"):
+        BartMRV2Config.verify_and_update_config(None)
