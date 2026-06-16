@@ -13,12 +13,15 @@ from torch import nn
 from transformers import BartConfig, BatchFeature, BartTokenizer, PretrainedConfig
 from transformers.utils import logging
 
-from vllm.attention.layer import Attention, AttentionType
 try:
+    from vllm.v1.attention.backend import AttentionType
+    from vllm.model_executor.layers.attention import Attention
     from vllm.model_executor.layers.attention.cross_attention import CrossAttention
     from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
 except ImportError:
     # These were moved after vLLM 0.13; try the legacy path
+    from vllm.attention.backends.abstract import AttentionType
+    from vllm.attention.layer import Attention
     from vllm.attention.layers.cross_attention import CrossAttention
     from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
 from vllm.config import CacheConfig, VllmConfig
@@ -38,9 +41,9 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.multimodal import MULTIMODAL_REGISTRY, ModalityData
+from vllm.inputs import ModalityData, MultiModalDataDict
+from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (
-    MultiModalDataDict,
     MultiModalFieldConfig,
     MultiModalKwargsItems,
 )
@@ -58,7 +61,10 @@ from vllm.multimodal.processing import (
     PromptInsertion,
     PromptIndexTargets,
 )
-from vllm.multimodal.profiling import BaseDummyInputsBuilder
+try:
+    from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
+except ImportError:
+    from vllm.multimodal.profiling import BaseDummyInputsBuilder
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
 
@@ -1079,6 +1085,12 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
 
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
+
+    @staticmethod
+    def get_model_state_cls():
+        from vllm_bart_plugin.model_state import BartEncoderDecoderModelState
+
+        return BartEncoderDecoderModelState
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
         encoder_input_ids_list = self._parse_and_validate_encoder_input(**kwargs)

@@ -4,12 +4,42 @@ This plugin registers the BART model with vLLM's ModelRegistry,
 allowing it to be used with vLLM's inference engine.
 """
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from vllm.model_executor.models.registry import ModelRegistry
+import os
+import sys
 
 __version__ = "0.1.0"
+
+_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
+_MODEL_REGISTRATIONS = (
+    (
+        "BartForConditionalGeneration",
+        "vllm_bart_plugin.bart:BartForConditionalGeneration",
+    ),
+    (
+        "Florence2ForConditionalGeneration",
+        "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
+    ),
+)
+
+
+def _clear_vllm_env_cache() -> None:
+    envs = sys.modules.get("vllm.envs")
+    env_getattr = getattr(envs, "__getattr__", None) if envs is not None else None
+    cache_clear = getattr(env_getattr, "cache_clear", None)
+    if cache_clear is not None:
+        cache_clear()
+
+
+def force_mrv2_model_runner() -> None:
+    """Default BART-family models to MRV2 unless explicitly disabled."""
+    disabled = (
+        os.getenv("VLLM_BART_FORCE_MRV2", "1").strip().lower()
+        in _FALSE_ENV_VALUES
+    )
+    if not disabled:
+        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+
+    _clear_vllm_env_cache()
 
 
 def register_bart_model() -> None:
@@ -18,23 +48,20 @@ def register_bart_model() -> None:
     This function is called automatically when the plugin is loaded
     through vLLM's plugin discovery mechanism.
     """
-    try:
-        from vllm.logger import init_logger
-        from vllm.model_executor.models.registry import ModelRegistry
-        from vllm_bart_plugin.runtime_patches import install_runtime_patches
+    force_mrv2_model_runner()
 
-        logger = init_logger(__name__)
-        # Register BartForConditionalGeneration with the ModelRegistry
-        # Using lazy loading to avoid importing the model class during plugin discovery
-        ModelRegistry.register_model(
-            "BartForConditionalGeneration",
-            "vllm_bart_plugin.bart:BartForConditionalGeneration",
-        )
-        ModelRegistry.register_model(
-            "Florence2ForConditionalGeneration",
-            "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
-        )
-        install_runtime_patches()
+    from vllm.logger import init_logger
+
+    logger = init_logger(__name__)
+    try:
+        from vllm.model_executor.models.registry import ModelRegistry
+
+        for model_name, model_ref in _MODEL_REGISTRATIONS:
+            ModelRegistry.register_model(model_name, model_ref)
+
+        from vllm_bart_plugin.openai_serving import install_openai_prompt_adapter
+
+        install_openai_prompt_adapter()
 
         logger.info("Successfully registered BART model with vLLM")
 
@@ -44,6 +71,7 @@ def register_bart_model() -> None:
 
 
 __all__ = [
+    "force_mrv2_model_runner",
     "register_bart_model",
     "__version__",
 ]

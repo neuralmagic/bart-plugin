@@ -98,13 +98,13 @@ For Florence-2 vision-language models, see `example_florence2_usage.py`.
 
 This plugin follows vLLM's plugin system architecture:
 
-1. **Entry Point**: Registered via setuptools entry_points in `setup.py`
+1. **Entry Point**: Registered via the `vllm.general_plugins` entry point in `pyproject.toml`
 2. **Registration Function**: `register_bart_model()` in `__init__.py` registers the model with vLLM's ModelRegistry
 3. **Model Implementation**: The BART model class in `bart.py` implements vLLM's model interfaces
 
 ### Plugin Discovery
 
-vLLM automatically discovers plugins using Python's entry point mechanism. The plugin is registered under the `vllm.plugins` group and is loaded when vLLM initializes.
+vLLM automatically discovers plugins using Python's entry point mechanism. The plugin is registered under the `vllm.general_plugins` group and is loaded when vLLM initializes.
 
 ## Model Features
 
@@ -178,6 +178,16 @@ export VLLM_BART_ENCODER_MAX_SEQ_PADDING=1
 Notes:
 - Requires `pad_token_id` to be set in the HF config. If it is missing, the plugin will log a warning and keep the optimization disabled.
 
+### `VLLM_BART_FORCE_MRV2`
+
+BART-family models default to MRV2 by setting `VLLM_USE_V2_MODEL_RUNNER=1`
+when the plugin is loaded. To opt out for debugging:
+
+```bash
+export VLLM_BART_FORCE_MRV2=0
+export VLLM_USE_V2_MODEL_RUNNER=0
+```
+
 
 ## Development
 
@@ -187,8 +197,10 @@ Notes:
 bart-plugin/
 ├── vllm_bart_plugin/
 │   ├── __init__.py          # Plugin registration
-│   └── bart.py              # BART model implementation
-├── setup.py                 # Package configuration and entry points
+│   ├── bart.py              # BART model implementation
+│   ├── florence2.py         # Florence-2 model implementation
+│   └── model_state.py       # MRV2 encoder-decoder state
+├── pyproject.toml           # Package configuration and entry points
 ├── README.md                # This file
 └── LICENSE                  # License file
 ```
@@ -213,7 +225,7 @@ pytest -m tests/
 If the plugin isn't being discovered:
 
 1. Verify installation: `uv pip list | grep vllm-bart-plugin`
-2. Check entry points: `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='vllm.plugins')))"`
+2. Check entry points: `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='vllm.general_plugins')))"`
 3. Enable verbose logging: Set `VLLM_LOGGING_LEVEL=DEBUG`
 4. Run the verification script: `python verify_plugin.py`
 

@@ -5,6 +5,12 @@ import torch
 from vllm import LLM
 
 
+def _register_bart_plugin():
+    from vllm_bart_plugin import register_bart_model
+
+    register_bart_model()
+
+
 class TestModelInitialization:
     """Test BART model initialization with vLLM."""
 
@@ -42,18 +48,20 @@ class TestModelInitialization:
         except Exception as e:
             pytest.fail(f"Failed to load model with config: {e}")
 
+    @pytest.mark.slow
     def test_model_class_initialization(self):
         """Test that model class can be instantiated."""
+        _register_bart_plugin()
+
         from vllm_bart_plugin.bart import BartForConditionalGeneration
-        from vllm.config import VllmConfig, ModelConfig, CacheConfig, LoadConfig
         from transformers import BartConfig
+        from vllm.config import CacheConfig, LoadConfig, ModelConfig, VllmConfig
 
         # Create minimal config
         hf_config = BartConfig.from_pretrained("facebook/bart-large-cnn")
 
         model_config = ModelConfig(
             model="facebook/bart-large-cnn",
-            task="generate",
             tokenizer="facebook/bart-large-cnn",
             tokenizer_mode="auto",
             trust_remote_code=False,
@@ -65,7 +73,6 @@ class TestModelInitialization:
         cache_config = CacheConfig(
             block_size=16,
             gpu_memory_utilization=0.3,
-            swap_space_bytes=0,
             cache_dtype="auto",
         )
 
@@ -79,8 +86,8 @@ class TestModelInitialization:
         try:
             model = BartForConditionalGeneration(vllm_config=vllm_config)
             assert model is not None
-            assert hasattr(model, 'model')
-            assert hasattr(model, 'lm_head')
+            assert hasattr(model, "model")
+            assert hasattr(model, "lm_head")
         except Exception as e:
             pytest.fail(f"Failed to instantiate model: {e}")
 
@@ -89,27 +96,30 @@ class TestModelInitialization:
         from vllm_bart_plugin.bart import BartForConditionalGeneration
 
         required_methods = [
-            'forward',
-            'compute_logits',
-            'load_weights',
-            'get_multimodal_embeddings',
+            "forward",
+            "compute_logits",
+            "load_weights",
+            "embed_multimodal",
         ]
 
         for method in required_methods:
-            assert hasattr(BartForConditionalGeneration, method), \
+            assert hasattr(BartForConditionalGeneration, method), (
                 f"Model missing required method: {method}"
+            )
 
+    @pytest.mark.slow
     def test_encoder_decoder_structure(self):
         """Test that BART has proper encoder-decoder structure."""
+        _register_bart_plugin()
+
         from vllm_bart_plugin.bart import BartModel, BartEncoder, BartDecoder
-        from vllm.config import VllmConfig, ModelConfig, CacheConfig, LoadConfig
         from transformers import BartConfig
+        from vllm.config import CacheConfig, LoadConfig, ModelConfig, VllmConfig
 
         hf_config = BartConfig.from_pretrained("facebook/bart-large-cnn")
 
         model_config = ModelConfig(
             model="facebook/bart-large-cnn",
-            task="generate",
             tokenizer="facebook/bart-large-cnn",
             tokenizer_mode="auto",
             trust_remote_code=False,
@@ -121,7 +131,6 @@ class TestModelInitialization:
         cache_config = CacheConfig(
             block_size=16,
             gpu_memory_utilization=0.3,
-            swap_space_bytes=0,
             cache_dtype="auto",
         )
 
@@ -133,7 +142,7 @@ class TestModelInitialization:
 
         model = BartModel(vllm_config=vllm_config)
 
-        assert hasattr(model, 'encoder')
-        assert hasattr(model, 'decoder')
+        assert hasattr(model, "encoder")
+        assert hasattr(model, "decoder")
         assert isinstance(model.encoder, BartEncoder)
         assert isinstance(model.decoder, BartDecoder)

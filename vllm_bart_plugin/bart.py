@@ -803,7 +803,12 @@ class BartDecoder(nn.Module):
             )
         return hidden_states
 
-    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def embed_input_ids(
+        self,
+        input_ids: torch.Tensor,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        is_multimodal: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
 
@@ -1242,7 +1247,18 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
     def get_language_model(self) -> nn.Module:
         return self.model.decoder
 
-    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def get_model_state_cls():
+        from vllm_bart_plugin.model_state import BartEncoderDecoderModelState
+
+        return BartEncoderDecoderModelState
+
+    def embed_input_ids(
+        self,
+        input_ids: torch.Tensor,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        is_multimodal: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         return self.model.decoder.embed_tokens(input_ids)
 
     def embed_multimodal(self, **kwargs) -> MultiModalEmbeddings:
@@ -1254,22 +1270,28 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
                 "Check that multimodal data is being passed correctly."
             )
 
-        # Process each encoder input separately and return a list of outputs
+        # Process each unique encoder input once and return a list of outputs.
         if not self._encoder_max_seq_padding:
             encoder_outputs: list[torch.Tensor] = []
+            cached_outputs: dict[tuple[int, ...], torch.Tensor] = {}
             for encoder_input_ids in encoder_input_ids_list:
-                # Create positions for encoder input (1D tensor)
+                cache_key = tuple(encoder_input_ids.reshape(-1).tolist())
+                encoder_output = cached_outputs.get(cache_key)
+                if encoder_output is not None:
+                    encoder_outputs.append(encoder_output)
+                    continue
+
                 encoder_positions = torch.arange(
                     encoder_input_ids.size(-1),
                     dtype=torch.long,
                     device=encoder_input_ids.device,
                 )
 
-                # Run encoder and append output, (N,) -> (N,D)
                 encoder_output = self.model.encoder(
                     input_ids=encoder_input_ids.squeeze(0),
                     positions=encoder_positions,
                 )
+                cached_outputs[cache_key] = encoder_output
                 encoder_outputs.append(encoder_output)
         else:
             # NOTE (NickLucche): Basic encoder batching optimization: BART input sequences

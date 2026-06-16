@@ -1,9 +1,14 @@
 """Tests for BART model inference."""
 
+import os
+
 import pytest
 from vllm import LLM, SamplingParams
-import os
+
 MODEL_NAME = "facebook/bart-large-cnn"
+pytestmark = pytest.mark.slow
+
+
 @pytest.fixture(scope="module")
 def llm():
     """Create LLM instance for tests."""
@@ -18,6 +23,7 @@ def llm():
         gpu_memory_utilization=0.3,
         dtype="float16",
     )
+
 
 class TestModelInference:
     """Test BART model inference capabilities."""

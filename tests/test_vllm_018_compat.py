@@ -8,16 +8,38 @@ def test_text_data_parser_handles_v018_empty_inputs():
 
     parser = TextDataParser()
 
-    assert parser._parse_text_data("") is None
-    assert parser._parse_text_data([]) is None
+    assert parser._parse_text_data("").data == [""]
+    assert parser._parse_text_data([]).data == [""]
 
 
-def test_create_encoder_prompt_uses_placeholder_token():
+def test_create_encoder_prompt_uses_placeholder_for_decoder_tokens():
     from vllm_bart_plugin.bart import BartMultiModalProcessor
 
     processor = BartMultiModalProcessor.__new__(BartMultiModalProcessor)
 
-    assert processor.create_encoder_prompt("<s>decoder text", {"texts": ["encoder text"]}) == [0]
+    assert processor.create_encoder_prompt([0, 1, 2], {"texts": ["encoder text"]}) == [0]
+
+
+def test_create_encoder_prompt_tokenizes_legacy_encoder_text():
+    from vllm_bart_plugin.bart import BartMultiModalProcessor
+
+    class FakeTokenizer:
+        def __call__(self, text, return_tensors="pt", **kwargs):
+            assert text == "encoder text"
+            return {"input_ids": torch.tensor([[11, 12, 13]])}
+
+    class FakeInfo:
+        def get_tokenizer(self):
+            return FakeTokenizer()
+
+    processor = BartMultiModalProcessor.__new__(BartMultiModalProcessor)
+    processor.info = FakeInfo()
+
+    assert processor.create_encoder_prompt("encoder text", {"texts": ["encoder text"]}) == [
+        11,
+        12,
+        13,
+    ]
 
 
 def test_call_hf_processor_accepts_pretokenized_decoder_prompt():
