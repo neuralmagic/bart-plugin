@@ -1,9 +1,12 @@
 """Tests for OpenAI completion prompt adaptation."""
 
+import asyncio
 from types import SimpleNamespace
 
 from vllm_bart_plugin.openai_serving import (
     _is_bart_family_model,
+    _is_encoder_decoder_model,
+    _patch_preprocess_completion,
     _wrap_completion_prompt,
 )
 
@@ -59,3 +62,44 @@ def test_is_bart_family_model_matches_architecture_fallback():
     )
 
     assert _is_bart_family_model(model_config)
+
+
+def test_encoder_decoder_check_falls_back_to_hf_config():
+    model_config = SimpleNamespace(
+        hf_config=SimpleNamespace(is_encoder_decoder=True),
+    )
+
+    assert _is_encoder_decoder_model(model_config)
+
+
+def test_patch_preprocess_completion_wraps_prompt():
+    class FakeServing:
+        def __init__(self):
+            self.model_config = SimpleNamespace(
+                hf_config=SimpleNamespace(
+                    is_encoder_decoder=True,
+                    model_type="bart",
+                ),
+            )
+            self.renderer = SimpleNamespace(tokenizer=FakeTokenizer())
+
+        async def preprocess_completion(
+            self,
+            request,
+            prompt_input,
+            prompt_embeds,
+            *,
+            skip_mm_cache=False,
+        ):
+            return prompt_input
+
+    _patch_preprocess_completion(FakeServing)
+
+    wrapped = asyncio.run(
+        FakeServing().preprocess_completion(None, "summarize this", None)
+    )
+
+    assert wrapped["encoder_prompt"]["multi_modal_data"] == {
+        "text": "summarize this"
+    }
+    assert wrapped["decoder_prompt"] == {"prompt_token_ids": [0]}

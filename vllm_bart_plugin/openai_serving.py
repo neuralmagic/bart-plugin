@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from typing import Any
 
 _BART_MODEL_TYPES = {"bart", "mbart", "florence2"}
@@ -18,6 +19,13 @@ def _is_bart_family_model(model_config: Any) -> bool:
         or "bart" in arch_text
         or "florence2" in arch_text
     )
+
+
+def _is_encoder_decoder_model(model_config: Any) -> bool:
+    if getattr(model_config, "is_encoder_decoder", False):
+        return True
+    hf_config = getattr(model_config, "hf_config", None)
+    return bool(getattr(hf_config, "is_encoder_decoder", False))
 
 
 def _encoder_cache_salt(
@@ -114,16 +122,11 @@ def _wrap_prompt_input(tokenizer: Any, prompt_input: Any) -> Any:
     return prompt_input
 
 
-def install_openai_prompt_adapter() -> None:
-    try:
-        from vllm.entrypoints.serve.render.serving import OpenAIServingRender
-    except ImportError:
+def _patch_preprocess_completion(serving_cls: type[Any]) -> None:
+    if getattr(serving_cls, "_vllm_bart_prompt_patched", False):
         return
 
-    if getattr(OpenAIServingRender, "_vllm_bart_prompt_patched", False):
-        return
-
-    original_preprocess_completion = OpenAIServingRender.preprocess_completion
+    original_preprocess_completion = serving_cls.preprocess_completion
 
     async def patched_preprocess_completion(
         self,
@@ -135,7 +138,7 @@ def install_openai_prompt_adapter() -> None:
     ):
         if (
             prompt_embeds is None
-            and getattr(self.model_config, "is_encoder_decoder", False)
+            and _is_encoder_decoder_model(self.model_config)
             and _is_bart_family_model(self.model_config)
         ):
             prompt_input = _wrap_prompt_input(self.renderer.tokenizer, prompt_input)
@@ -147,5 +150,18 @@ def install_openai_prompt_adapter() -> None:
             skip_mm_cache=skip_mm_cache,
         )
 
-    OpenAIServingRender.preprocess_completion = patched_preprocess_completion
-    OpenAIServingRender._vllm_bart_prompt_patched = True
+    serving_cls.preprocess_completion = patched_preprocess_completion
+    serving_cls._vllm_bart_prompt_patched = True
+
+
+def install_openai_prompt_adapter() -> None:
+    for module_name, class_name in (
+        ("vllm.entrypoints.serve.render.serving", "OpenAIServingRender"),
+        ("vllm.renderers.online_renderer", "OnlineRenderer"),
+    ):
+        try:
+            module = importlib.import_module(module_name)
+            serving_cls = getattr(module, class_name)
+        except (ImportError, AttributeError):
+            continue
+        _patch_preprocess_completion(serving_cls)
