@@ -11,9 +11,9 @@ setup(
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[
-        "vllm>=0.13.0,<=0.19.1",
+        "vllm>=0.13.0,<=0.24.0",
         "torch>=2.9.0",
-        "transformers >= 4.56.0, < 5",
+        "transformers>=4.56.0",
     ],
     entry_points={
         "vllm.general_plugins": [
@@ -24,9 +24,8 @@ setup(
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
 )
