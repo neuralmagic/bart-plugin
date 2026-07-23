@@ -42,7 +42,7 @@ try:
     from vllm.model_executor.layers.attention import Attention
     from vllm.model_executor.layers.attention.cross_attention import CrossAttention
     from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
-    from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
+    from vllm.multimodal.processing import BaseDummyInputsBuilder
 except ImportError:
     # These were moved after vLLM 0.13; try the legacy path
     from vllm.attention.backends.abstract import AttentionType

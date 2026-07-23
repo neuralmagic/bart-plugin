@@ -33,6 +33,10 @@ def register_bart_model() -> None:
             "Florence2ForConditionalGeneration",
             "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
         )
+        ModelRegistry.register_model(
+            "T5Gemma2ForConditionalGeneration",
+            "vllm_bart_plugin.t5gemma2:T5Gemma2ForConditionalGeneration",
+        )
 
         logger.info("Successfully registered BART model with vLLM")
 
