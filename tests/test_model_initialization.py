@@ -14,6 +14,41 @@ def _register_bart_plugin():
 class TestModelInitialization:
     """Test BART model initialization with vLLM."""
 
+    def test_encoder_layer_always_clamps_fp16(self, monkeypatch):
+        """Keep the FP16 overflow guard on-device without a scalar read."""
+        from vllm_bart_plugin import bart
+
+        layer = bart.BartEncoderLayer.__new__(bart.BartEncoderLayer)
+        torch.nn.Module.__init__(layer)
+
+        def identity(hidden_states):
+            return hidden_states
+
+        layer.__dict__.update(
+            self_attn=lambda *, hidden_states: torch.zeros_like(hidden_states),
+            self_attn_layer_norm=identity,
+            activation_fn=identity,
+            fc1=lambda hidden_states: (hidden_states, None),
+            fc2=lambda hidden_states: (hidden_states, None),
+            final_layer_norm=identity,
+        )
+
+        clamp_calls = []
+        original_clamp = bart.cast_overflow_tensors
+
+        def track_clamp(hidden_states):
+            clamp_calls.append(hidden_states)
+            return original_clamp(hidden_states)
+
+        monkeypatch.setattr(bart, "cast_overflow_tensors", track_clamp)
+        output = layer(torch.ones((2, 4), dtype=torch.float16))
+
+        assert len(clamp_calls) == 1
+        assert output.dtype == torch.float16
+
+        layer(torch.ones((2, 4), dtype=torch.float32))
+        assert len(clamp_calls) == 1
+
     @pytest.mark.slow
     def test_model_loads(self, small_model_name):
         """Test that BART model can be loaded."""
