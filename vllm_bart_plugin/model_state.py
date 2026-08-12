@@ -54,6 +54,7 @@ class BartEncoderDecoderModelState(DefaultModelState):
         self,
         scheduled_encoder_inputs: dict[str, list[int]],
         input_batch: InputBatch,
+        req_states: RequestState | None = None,
     ) -> None:
         encoder_inputs = {
             req_id: req_encoder_inputs
