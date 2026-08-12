@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple script to bump the package version in pyproject.toml."""
+"""Simple script to bump the package version in setup.py and pyproject.toml."""
 
 import argparse
 import re
@@ -77,6 +77,9 @@ def main():
     args = parser.parse_args()
 
     root = Path(__file__).parent.parent
+    files = [root / "setup.py", root / "pyproject.toml"]
+
+    # Get current version from pyproject.toml
     pyproject = root / "pyproject.toml"
     if not pyproject.exists():
         print("Error: pyproject.toml not found", file=sys.stderr)
@@ -99,10 +102,12 @@ def main():
         print("Dry run - no files modified")
         return
 
-    if update_file(pyproject, current_version, new_version):
-        print(f"Updated: {pyproject.name}")
-    else:
-        print(f"Skipped: {pyproject.name} (no changes)")
+    # Update files
+    for filepath in files:
+        if update_file(filepath, current_version, new_version):
+            print(f"Updated: {filepath.name}")
+        else:
+            print(f"Skipped: {filepath.name} (not found or no changes)")
 
     print(f"\nDone! Don't forget to commit and tag: git tag v{new_version}")
 

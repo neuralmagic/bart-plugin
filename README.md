@@ -100,7 +100,7 @@ For Florence-2 vision-language models, see `example_florence2_usage.py`.
 
 This plugin follows vLLM's plugin system architecture:
 
-1. **Entry Point**: Registered via the `vllm.general_plugins` entry point in `pyproject.toml`
+1. **Entry Point**: Registered via the `vllm.general_plugins` entry point in the package metadata
 2. **Registration Function**: `register_bart_model()` in `__init__.py` registers the model with vLLM's ModelRegistry
 3. **Model Implementation**: The BART model class in `bart.py` implements vLLM's model interfaces
 
@@ -198,6 +198,7 @@ bart-plugin/
 │   ├── florence2.py         # Florence-2 model implementation
 │   └── model_state.py       # MRV2 encoder-decoder state
 ├── pyproject.toml           # Package configuration and entry points
+├── setup.py                 # Package configuration and entry points
 ├── README.md                # This file
 └── LICENSE                  # License file
 ```
