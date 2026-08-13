@@ -1196,12 +1196,6 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
     def get_language_model(self) -> nn.Module:
         return self.model.decoder
 
-    @staticmethod
-    def get_model_state_cls():
-        from vllm_bart_plugin.model_state import BartEncoderDecoderModelState
-
-        return BartEncoderDecoderModelState
-
     def embed_input_ids(
         self,
         input_ids: torch.Tensor,
@@ -1220,6 +1214,8 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
             )
 
         # Process each unique encoder input once and return a list of outputs.
+        # Duplicate inputs (e.g. beams sharing a prompt) alias the same output
+        # tensor, which is safe as long as consumers only read it.
         if not self._encoder_max_seq_padding:
             encoder_outputs: list[torch.Tensor] = []
             cached_outputs: dict[tuple[int, ...], torch.Tensor] = {}
@@ -1326,7 +1322,7 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        encoder_outputs: torch.Tensor | None = None,
+        encoder_outputs: list[torch.Tensor] | None = None,
         # num_encoder_outputs: int | None = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -1344,12 +1340,13 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
         Returns:
             Output torch.Tensor
         """
-        if encoder_outputs is not None:
-            # Assume same shape for all encoder outputs
-            encoder_outputs = torch.cat(encoder_outputs, dim=0)
+        # EncoderDecoderModelState passes an empty list on decode steps.
+        enc_states = (
+            torch.cat(encoder_outputs, dim=0) if encoder_outputs else None
+        )
 
         return self.model(
-            input_ids, positions, inputs_embeds, encoder_outputs=encoder_outputs
+            input_ids, positions, inputs_embeds, encoder_outputs=enc_states
         )
 
     def compute_logits(

@@ -3,7 +3,7 @@
 import torch
 
 
-def test_text_data_parser_handles_v018_empty_inputs():
+def test_text_data_parser_handles_empty_inputs():
     from vllm_bart_plugin.bart import TextDataParser
 
     parser = TextDataParser()

@@ -19,17 +19,26 @@ def test_register_bart_config_marks_architectures_as_default_mrv2(monkeypatch):
         "DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES",
         frozenset({"LlamaForCausalLM"}),
     )
-    for architecture in BART_ARCHITECTURES:
-        monkeypatch.delitem(MODELS_CONFIG_MAP, architecture, raising=False)
+    saved = {
+        architecture: MODELS_CONFIG_MAP.pop(architecture, None)
+        for architecture in BART_ARCHITECTURES
+    }
+    try:
+        register_bart_config()
 
-    register_bart_config()
-
-    for architecture in BART_ARCHITECTURES:
-        assert MODELS_CONFIG_MAP[architecture] is BartMRV2Config
-        assert (
-            architecture
-            in vllm_config_module.DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES
-        )
+        for architecture in BART_ARCHITECTURES:
+            assert MODELS_CONFIG_MAP[architecture] is BartMRV2Config
+            assert (
+                architecture
+                in vllm_config_module.DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES
+            )
+    finally:
+        for architecture, config_cls in saved.items():
+            if config_cls is None:
+                MODELS_CONFIG_MAP.pop(architecture, None)
+            else:
+                MODELS_CONFIG_MAP[architecture] = config_cls
+        vllm_config_module.default_v2_model_runner_architectures.cache_clear()
 
 
 def test_bart_config_rejects_non_mrv2_runner():

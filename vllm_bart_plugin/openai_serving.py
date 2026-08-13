@@ -123,7 +123,9 @@ def _wrap_prompt_input(tokenizer: Any, prompt_input: Any) -> Any:
 
 
 def _patch_preprocess_completion(serving_cls: type[Any]) -> None:
-    if getattr(serving_cls, "_vllm_bart_prompt_patched", False):
+    # vars() rather than getattr: an inherited flag must not skip a subclass
+    # that overrides preprocess_completion.
+    if vars(serving_cls).get("_vllm_bart_prompt_patched", False):
         return
 
     original_preprocess_completion = serving_cls.preprocess_completion
@@ -132,9 +134,9 @@ def _patch_preprocess_completion(serving_cls: type[Any]) -> None:
         self,
         request,
         prompt_input,
-        prompt_embeds,
-        *,
-        skip_mm_cache: bool = False,
+        prompt_embeds=None,
+        *args,
+        **kwargs,
     ):
         if (
             prompt_embeds is None
@@ -147,7 +149,8 @@ def _patch_preprocess_completion(serving_cls: type[Any]) -> None:
             request,
             prompt_input,
             prompt_embeds,
-            skip_mm_cache=skip_mm_cache,
+            *args,
+            **kwargs,
         )
 
     serving_cls.preprocess_completion = patched_preprocess_completion

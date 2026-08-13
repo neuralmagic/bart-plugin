@@ -10,7 +10,7 @@ BART is an encoder-decoder model that is particularly effective for sequence-to-
 
 ### Prerequisites
 
-This plugin requires vLLM 0.23.0 or newer and
+This plugin requires vLLM 0.26.1 or newer (or a matching nightly/source build) and
 [uv](https://docs.astral.sh/uv/) for package management. If you don't have uv
 installed:
 
@@ -183,7 +183,9 @@ Notes:
 ### MRV2
 
 BART-family models are MRV2-only. The plugin registers BART and Florence-2
-architectures as default-MRV2 models through vLLM config hooks.
+architectures as default-MRV2 models through vLLM config hooks. At runtime the
+models use vLLM's built-in `EncoderDecoderModelState`, which the model runner
+selects automatically for cross-attention models.
 
 
 ## Development
@@ -196,7 +198,8 @@ bart-plugin/
 │   ├── __init__.py          # Plugin registration
 │   ├── bart.py              # BART model implementation
 │   ├── florence2.py         # Florence-2 model implementation
-│   └── model_state.py       # MRV2 encoder-decoder state
+│   ├── config.py            # MRV2 config hooks
+│   └── openai_serving.py    # OpenAI completion prompt adapter
 ├── pyproject.toml           # Package configuration and entry points
 ├── setup.py                 # Package configuration and entry points
 ├── README.md                # This file
@@ -243,5 +246,5 @@ If vLLM doesn't recognize the BART model:
 Make sure all dependencies are installed:
 
 ```bash
-uv pip install "vllm>=0.23.0" torch transformers
+uv pip install "vllm>=0.26.1" torch transformers
 ```

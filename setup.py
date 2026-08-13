@@ -9,9 +9,10 @@ setup(
     author="Nicolò Lucchesi",
     author_email="nick.lucche@redhat.com",
     packages=find_packages(),
+    package_data={"vllm_bart_plugin": ["py.typed"]},
     python_requires=">=3.10",
     install_requires=[
-        "vllm>=0.23.0",
+        "vllm>=0.26.1",
         "torch>=2.9.0",
         "transformers>=4.56.0",
     ],

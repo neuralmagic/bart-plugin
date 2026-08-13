@@ -1088,12 +1088,6 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
 
-    @staticmethod
-    def get_model_state_cls():
-        from vllm_bart_plugin.model_state import BartEncoderDecoderModelState
-
-        return BartEncoderDecoderModelState
-
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
         encoder_input_ids_list = self._parse_and_validate_encoder_input(**kwargs)
         image_input = self._parse_and_validate_image_input(**kwargs)
@@ -1166,7 +1160,7 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        encoder_outputs: torch.Tensor | None = None,
+        encoder_outputs: list[torch.Tensor] | None = None,
         # num_encoder_outputs: int | None = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -1183,13 +1177,14 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
         Returns:
             Output torch.Tensor
         """
-        if encoder_outputs is not None:
-            # Assume same shape for all encoder outputs
-            encoder_outputs = torch.cat(encoder_outputs, dim=0)
+        # EncoderDecoderModelState passes an empty list on decode steps.
+        enc_states = (
+            torch.cat(encoder_outputs, dim=0) if encoder_outputs else None
+        )
 
         hidden_states = self.language_model(input_ids,
                                             positions,
-                                            encoder_outputs=encoder_outputs,
+                                            encoder_outputs=enc_states,
                                             inputs_embeds=inputs_embeds)
         return hidden_states
 
