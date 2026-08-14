@@ -4,7 +4,7 @@ This plugin registers the BART model with vLLM's ModelRegistry,
 allowing it to be used with vLLM's inference engine.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 _MODEL_REGISTRATIONS = (
     (
