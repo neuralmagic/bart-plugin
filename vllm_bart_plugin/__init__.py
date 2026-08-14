@@ -4,12 +4,18 @@ This plugin registers the BART model with vLLM's ModelRegistry,
 allowing it to be used with vLLM's inference engine.
 """
 
-from typing import TYPE_CHECKING
+__version__ = "0.5.0"
 
-if TYPE_CHECKING:
-    from vllm.model_executor.models.registry import ModelRegistry
-
-__version__ = "0.1.0"
+_MODEL_REGISTRATIONS = (
+    (
+        "BartForConditionalGeneration",
+        "vllm_bart_plugin.bart:BartForConditionalGeneration",
+    ),
+    (
+        "Florence2ForConditionalGeneration",
+        "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
+    ),
+)
 
 
 def register_bart_model() -> None:
@@ -18,23 +24,27 @@ def register_bart_model() -> None:
     This function is called automatically when the plugin is loaded
     through vLLM's plugin discovery mechanism.
     """
+    from vllm.logger import init_logger
+
+    logger = init_logger(__name__)
     try:
-        from vllm.logger import init_logger
         from vllm.model_executor.models.registry import ModelRegistry
 
-        logger = init_logger(__name__)
-        # Register BartForConditionalGeneration with the ModelRegistry
-        # Using lazy loading to avoid importing the model class during plugin discovery
-        ModelRegistry.register_model(
-            "BartForConditionalGeneration",
-            "vllm_bart_plugin.bart:BartForConditionalGeneration",
-        )
-        ModelRegistry.register_model(
-            "Florence2ForConditionalGeneration",
-            "vllm_bart_plugin.florence2:Florence2ForConditionalGeneration",
-        )
+        from vllm_bart_plugin.config import register_bart_config
 
-        logger.info("Successfully registered BART model with vLLM")
+        register_bart_config()
+
+        for model_name, model_ref in _MODEL_REGISTRATIONS:
+            ModelRegistry.register_model(model_name, model_ref)
+
+        from vllm_bart_plugin.openai_serving import install_openai_prompt_adapter
+
+        install_openai_prompt_adapter()
+
+        logger.info(
+            "Successfully registered %s with vLLM",
+            ", ".join(model_name for model_name, _ in _MODEL_REGISTRATIONS),
+        )
 
     except Exception as e:
         logger.error(f"Failed to register BART model: {e}")

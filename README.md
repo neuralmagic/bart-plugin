@@ -10,7 +10,9 @@ BART is an encoder-decoder model that is particularly effective for sequence-to-
 
 ### Prerequisites
 
-This plugin requires [uv](https://docs.astral.sh/uv/) for package management. If you don't have it installed:
+This plugin requires vLLM 0.26.1 or newer (or a matching nightly/source build) and
+[uv](https://docs.astral.sh/uv/) for package management. If you don't have uv
+installed:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -98,13 +100,13 @@ For Florence-2 vision-language models, see `example_florence2_usage.py`.
 
 This plugin follows vLLM's plugin system architecture:
 
-1. **Entry Point**: Registered via setuptools entry_points in `setup.py`
+1. **Entry Point**: Registered via the `vllm.general_plugins` entry point in the package metadata
 2. **Registration Function**: `register_bart_model()` in `__init__.py` registers the model with vLLM's ModelRegistry
 3. **Model Implementation**: The BART model class in `bart.py` implements vLLM's model interfaces
 
 ### Plugin Discovery
 
-vLLM automatically discovers plugins using Python's entry point mechanism. The plugin is registered under the `vllm.plugins` group and is loaded when vLLM initializes.
+vLLM automatically discovers plugins using Python's entry point mechanism. The plugin is registered under the `vllm.general_plugins` group and is loaded when vLLM initializes.
 
 ## Model Features
 
@@ -178,6 +180,13 @@ export VLLM_BART_ENCODER_MAX_SEQ_PADDING=1
 Notes:
 - Requires `pad_token_id` to be set in the HF config. If it is missing, the plugin will log a warning and keep the optimization disabled.
 
+### MRV2
+
+BART-family models are MRV2-only. The plugin registers BART and Florence-2
+architectures as default-MRV2 models through vLLM config hooks. At runtime the
+models use vLLM's built-in `EncoderDecoderModelState`, which the model runner
+selects automatically for cross-attention models.
+
 
 ## Development
 
@@ -187,7 +196,11 @@ Notes:
 bart-plugin/
 ├── vllm_bart_plugin/
 │   ├── __init__.py          # Plugin registration
-│   └── bart.py              # BART model implementation
+│   ├── bart.py              # BART model implementation
+│   ├── florence2.py         # Florence-2 model implementation
+│   ├── config.py            # MRV2 config hooks
+│   └── openai_serving.py    # OpenAI completion prompt adapter
+├── pyproject.toml           # Package configuration and entry points
 ├── setup.py                 # Package configuration and entry points
 ├── README.md                # This file
 └── LICENSE                  # License file
@@ -213,7 +226,7 @@ pytest -m tests/
 If the plugin isn't being discovered:
 
 1. Verify installation: `uv pip list | grep vllm-bart-plugin`
-2. Check entry points: `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='vllm.plugins')))"`
+2. Check entry points: `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='vllm.general_plugins')))"`
 3. Enable verbose logging: Set `VLLM_LOGGING_LEVEL=DEBUG`
 4. Run the verification script: `python verify_plugin.py`
 
@@ -233,5 +246,5 @@ If vLLM doesn't recognize the BART model:
 Make sure all dependencies are installed:
 
 ```bash
-uv pip install vllm torch transformers
+uv pip install "vllm>=0.26.1" torch transformers
 ```

@@ -13,18 +13,16 @@ from torch import nn
 from transformers import BartConfig, BatchFeature, BartTokenizer, PretrainedConfig
 from transformers.utils import logging
 
-from vllm.attention.layer import Attention, AttentionType
-try:
-    from vllm.model_executor.layers.attention.cross_attention import CrossAttention
-    from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
-except ImportError:
-    # These were moved after vLLM 0.13; try the legacy path
-    from vllm.attention.layers.cross_attention import CrossAttention
-    from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
 from vllm.config import CacheConfig, VllmConfig
 from vllm.config.lora import LoRAConfig
 from vllm.config.multimodal import BaseDummyOptions
 from vllm.distributed import get_tensor_model_parallel_world_size
+from vllm.inputs import ModalityData, MultiModalDataDict
+from vllm.model_executor.layers.attention import Attention
+from vllm.model_executor.layers.attention.cross_attention import CrossAttention
+from vllm.model_executor.layers.attention.mm_encoder_attention import (
+    MMEncoderAttention,
+)
 from vllm.model_executor.layers.activation import get_act_fn
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -38,9 +36,8 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.multimodal import MULTIMODAL_REGISTRY, ModalityData
+from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (
-    MultiModalDataDict,
     MultiModalFieldConfig,
     MultiModalKwargsItems,
 )
@@ -58,12 +55,23 @@ from vllm.multimodal.processing import (
     PromptInsertion,
     PromptIndexTargets,
 )
-from vllm.multimodal.profiling import BaseDummyInputsBuilder
+from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
+from vllm.v1.attention.backend import AttentionType
 
-from vllm.model_executor.models.interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsQuant
-from vllm.model_executor.models.utils import AutoWeightsLoader, WeightsMapper, cast_overflow_tensors, maybe_prefix, flatten_bn
+from vllm.model_executor.models.interfaces import (
+    MultiModalEmbeddings,
+    SupportsMultiModal,
+    SupportsQuant,
+)
+from vllm.model_executor.models.utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    cast_overflow_tensors,
+    flatten_bn,
+    maybe_prefix,
+)
 
 from vllm_bart_plugin.bart import BartDecoder, BartEncoder, BartParallelLMHead, BartScaledWordEmbedding
 
@@ -1152,7 +1160,7 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        encoder_outputs: torch.Tensor | None = None,
+        encoder_outputs: list[torch.Tensor] | None = None,
         # num_encoder_outputs: int | None = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -1169,13 +1177,14 @@ class Florence2ForConditionalGeneration(nn.Module, SupportsMultiModal):
         Returns:
             Output torch.Tensor
         """
-        if encoder_outputs is not None:
-            # Assume same shape for all encoder outputs
-            encoder_outputs = torch.cat(encoder_outputs, dim=0)
+        # EncoderDecoderModelState passes an empty list on decode steps.
+        enc_states = (
+            torch.cat(encoder_outputs, dim=0) if encoder_outputs else None
+        )
 
         hidden_states = self.language_model(input_ids,
                                             positions,
-                                            encoder_outputs=encoder_outputs,
+                                            encoder_outputs=enc_states,
                                             inputs_embeds=inputs_embeds)
         return hidden_states
 

@@ -34,24 +34,13 @@ from vllm.config import CacheConfig, VllmConfig
 from vllm.config.lora import LoRAConfig
 from vllm.config.multimodal import BaseDummyOptions
 from vllm.distributed import get_tensor_model_parallel_world_size
+from vllm.inputs import MultiModalDataDict
+from vllm.model_executor.layers.attention import Attention
+from vllm.model_executor.layers.attention.cross_attention import CrossAttention
+from vllm.model_executor.layers.attention.mm_encoder_attention import (
+    MMEncoderAttention,
+)
 from vllm.model_executor.layers.activation import get_act_fn
-
-IS_LEGACY=False
-try:
-    from vllm.v1.attention.backend import AttentionType
-    from vllm.model_executor.layers.attention import Attention
-    from vllm.model_executor.layers.attention.cross_attention import CrossAttention
-    from vllm.model_executor.layers.attention.mm_encoder_attention import MMEncoderAttention
-    from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
-except ImportError:
-    # These were moved after vLLM 0.13; try the legacy path
-    from vllm.attention.backends.abstract import AttentionType
-    from vllm.attention.layer import Attention
-    from vllm.attention.layers.cross_attention import CrossAttention
-    from vllm.attention.layers.mm_encoder_attention import MMEncoderAttention
-    from vllm.multimodal.profiling import BaseDummyInputsBuilder
-    IS_LEGACY=True
-
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     QKVParallelLinear,
@@ -88,18 +77,15 @@ from vllm.multimodal.parse import (
     MultiModalDataParser,
     ProcessorBatchItems,
 )
-
-try:
-    from vllm.inputs import MultiModalDataDict
-except ImportError:
-    from vllm.multimodal.inputs import MultiModalDataDict  # type: ignore[no-redef]
 from vllm.multimodal.processing import (
     BaseProcessingInfo,
     EncDecMultiModalProcessor,
     PromptUpdate,
 )
+from vllm.multimodal.processing.dummy_inputs import BaseDummyInputsBuilder
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
+from vllm.v1.attention.backend import AttentionType
 
 logger = logging.get_logger(__name__)
 
@@ -521,9 +507,7 @@ class BartEncoderLayer(nn.Module):
         hidden_states = residual + hidden_states
         hidden_states = self.final_layer_norm(hidden_states)
 
-        if hidden_states.dtype == torch.float16 and (
-            torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
-        ):
+        if hidden_states.dtype == torch.float16:
             hidden_states = cast_overflow_tensors(hidden_states)
 
         return hidden_states
@@ -803,7 +787,12 @@ class BartDecoder(nn.Module):
             )
         return hidden_states
 
-    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def embed_input_ids(
+        self,
+        input_ids: torch.Tensor,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        is_multimodal: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
 
@@ -843,7 +832,7 @@ class BartModel(nn.Module, SupportsQuant):
         input_ids: torch.Tensor | None,
         positions: torch.Tensor,
         inputs_embeds: torch.Tensor | None,
-        encoder_outputs: list[torch.Tensor],
+        encoder_outputs: torch.Tensor | None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -949,20 +938,10 @@ class BartProcessingInfo(BaseProcessingInfo):
     def get_data_parser(self) -> MultiModalDataParser:
         return TextDataParser()
 
-
-# vLLM >=0.18 moved tokenization defaults from a global enc-dec override
-# (InputPreprocessor._get_tokenization_kw) into per-model ProcessingInfo.
-# The old code forced add_special_tokens=False for every is_encoder_decoder
-# model; replicate that here so the renderer does not inject extra BOS/EOS
-# into the decoder prompt.  On vLLM <0.18 the method does not exist on the
-# base class and is not needed (the global override handles it).
-if hasattr(BaseProcessingInfo, "get_default_tok_params"):
-
-    def _bart_get_default_tok_params(self):
-        return super(BartProcessingInfo, self).get_default_tok_params() \
-            .with_kwargs(add_special_tokens=False)
-
-    BartProcessingInfo.get_default_tok_params = _bart_get_default_tok_params  # type: ignore[attr-defined]
+    def get_default_tok_params(self):
+        return super().get_default_tok_params().with_kwargs(
+            add_special_tokens=False
+        )
 
 
 class BartDummyInputsBuilder(BaseDummyInputsBuilder[BartProcessingInfo]):
@@ -1013,7 +992,6 @@ class TextDataParser(MultiModalDataParser):
         data: ModalityData[str],
     ) -> ModalityDataItems[Any, Any] | None:
         """Parse text data for BART."""
-        # _is_empty was removed in vLLM >=0.18; handle emptiness inline
         if data is None or not len(data):
             return TextProcessorItems(None)
 
@@ -1034,36 +1012,11 @@ class TextDataParser(MultiModalDataParser):
 class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
     """Multimodal processor for BART encoder-decoder models."""
 
-    def __init__(self, *args, **kwargs):
-        # HACK: v13 needs to define _get_data_parser, but v16 throws in __init__
-        # if this class has _get_data_parser as an attribute, so for now,
-        # we conditionally ist based on which import path was taken, since
-        # those are also changes that were needed for v13.
-        if IS_LEGACY:
-            self._get_data_parser = self.build_data_parser
-        super().__init__(*args, **kwargs)
-
     def create_encoder_prompt(
         self,
         prompt: str | list[int],
         mm_items: MultiModalDataItems,
     ) -> str | list[int]:
-        # vLLM compatibility:
-        # - Legacy (<0.18): prompt is encoder text (str) — tokenize directly.
-        # - Modern (>=0.18): prompt is decoder token IDs or empty str from
-        #   profiling — return a single [0] placeholder that _get_prompt_updates
-        #   will expand to the real encoder token count.  The placeholder IDs
-        #   are structural (KV-cache sizing); the actual encoder computation
-        #   uses encoder_input_ids from mm_kwargs.
-        if isinstance(prompt, str) and prompt:
-            tokenizer = self.info.get_tokenizer()
-            tokens = tokenizer(
-                prompt,
-                add_special_tokens=False,
-                return_tensors="pt",
-            )["input_ids"].flatten()
-            return tokens.tolist()
-
         return [0]
 
     def create_decoder_prompt(
@@ -1090,7 +1043,7 @@ class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
           build ``prompt_token_ids``)
 
         Encoder text is always tokenized with ``add_special_tokens=False`` to
-        match v0.16 behaviour and stay consistent with ``_get_prompt_updates``.
+        stay consistent with ``_get_prompt_updates``.
         """
         from transformers.feature_extraction_utils import BatchFeature
 
@@ -1112,10 +1065,11 @@ class BartMultiModalProcessor(EncDecMultiModalProcessor[BartProcessingInfo]):
             result["encoder_input_ids"] = encoder_tokenized["input_ids"]
 
         # Always produce input_ids for the decoder prompt.
-        # In vLLM >=0.18 the rendering pipeline may call _call_hf_processor
-        # with an already-tokenized prompt (a list of ints) instead of a str.
-        # Handle both cases.
-        if isinstance(prompt, (list, tuple)) and len(prompt) > 0 and isinstance(prompt[0], int):
+        if (
+            isinstance(prompt, (list, tuple))
+            and len(prompt) > 0
+            and isinstance(prompt[0], int)
+        ):
             result["input_ids"] = torch.tensor([prompt])
         else:
             prompt_tokenized = tokenizer(
@@ -1242,7 +1196,12 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
     def get_language_model(self) -> nn.Module:
         return self.model.decoder
 
-    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def embed_input_ids(
+        self,
+        input_ids: torch.Tensor,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        is_multimodal: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         return self.model.decoder.embed_tokens(input_ids)
 
     def embed_multimodal(self, **kwargs) -> MultiModalEmbeddings:
@@ -1254,22 +1213,30 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
                 "Check that multimodal data is being passed correctly."
             )
 
-        # Process each encoder input separately and return a list of outputs
+        # Process each unique encoder input once and return a list of outputs.
+        # Duplicate inputs (e.g. beams sharing a prompt) alias the same output
+        # tensor, which is safe as long as consumers only read it.
         if not self._encoder_max_seq_padding:
             encoder_outputs: list[torch.Tensor] = []
+            cached_outputs: dict[tuple[int, ...], torch.Tensor] = {}
             for encoder_input_ids in encoder_input_ids_list:
-                # Create positions for encoder input (1D tensor)
+                cache_key = tuple(encoder_input_ids.reshape(-1).tolist())
+                encoder_output = cached_outputs.get(cache_key)
+                if encoder_output is not None:
+                    encoder_outputs.append(encoder_output)
+                    continue
+
                 encoder_positions = torch.arange(
                     encoder_input_ids.size(-1),
                     dtype=torch.long,
                     device=encoder_input_ids.device,
                 )
 
-                # Run encoder and append output, (N,) -> (N,D)
                 encoder_output = self.model.encoder(
                     input_ids=encoder_input_ids.squeeze(0),
                     positions=encoder_positions,
                 )
+                cached_outputs[cache_key] = encoder_output
                 encoder_outputs.append(encoder_output)
         else:
             # NOTE (NickLucche): Basic encoder batching optimization: BART input sequences
@@ -1355,7 +1322,7 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        encoder_outputs: torch.Tensor | None = None,
+        encoder_outputs: list[torch.Tensor] | None = None,
         # num_encoder_outputs: int | None = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -1373,12 +1340,13 @@ class BartForConditionalGeneration(nn.Module, SupportsQuant, SupportsMultiModal)
         Returns:
             Output torch.Tensor
         """
-        if encoder_outputs is not None:
-            # Assume same shape for all encoder outputs
-            encoder_outputs = torch.cat(encoder_outputs, dim=0)
+        # EncoderDecoderModelState passes an empty list on decode steps.
+        enc_states = (
+            torch.cat(encoder_outputs, dim=0) if encoder_outputs else None
+        )
 
         return self.model(
-            input_ids, positions, inputs_embeds, encoder_outputs=encoder_outputs
+            input_ids, positions, inputs_embeds, encoder_outputs=enc_states
         )
 
     def compute_logits(

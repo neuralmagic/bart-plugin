@@ -1,23 +1,23 @@
-"""Regression tests for vLLM 0.18 compatibility in the BART processor."""
+"""Tests for BART multimodal processor helpers."""
 
 import torch
 
 
-def test_text_data_parser_handles_v018_empty_inputs():
+def test_text_data_parser_handles_empty_inputs():
     from vllm_bart_plugin.bart import TextDataParser
 
     parser = TextDataParser()
 
-    assert parser._parse_text_data("") is None
-    assert parser._parse_text_data([]) is None
+    assert parser._parse_text_data("").data == [""]
+    assert parser._parse_text_data([]).data == [""]
 
 
-def test_create_encoder_prompt_uses_placeholder_token():
+def test_create_encoder_prompt_uses_placeholder_for_decoder_tokens():
     from vllm_bart_plugin.bart import BartMultiModalProcessor
 
     processor = BartMultiModalProcessor.__new__(BartMultiModalProcessor)
 
-    assert processor.create_encoder_prompt("<s>decoder text", {"texts": ["encoder text"]}) == [0]
+    assert processor.create_encoder_prompt([0, 1, 2], {"texts": ["encoder text"]}) == [0]
 
 
 def test_call_hf_processor_accepts_pretokenized_decoder_prompt():
