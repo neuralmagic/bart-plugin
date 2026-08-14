@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from vllm.logger import init_logger
+
 from vllm_bart_plugin.config import BART_ARCHITECTURES
+
+logger = init_logger(__name__)
 
 _BART_MODEL_TYPES = {"bart", "mbart", "florence2"}
 
@@ -78,5 +82,10 @@ def install_openai_prompt_adapter() -> None:
     try:
         from vllm.renderers.online_renderer import OnlineRenderer
     except ImportError:
+        logger.warning(
+            "Could not import vllm.renderers.online_renderer.OnlineRenderer; "
+            "the OpenAI completion prompt adapter is not installed. Plain "
+            "/v1/completions prompts will not be routed to the BART encoder."
+        )
         return
     _patch_preprocess_completion(OnlineRenderer)

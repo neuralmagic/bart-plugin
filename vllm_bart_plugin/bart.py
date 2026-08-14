@@ -832,7 +832,7 @@ class BartModel(nn.Module, SupportsQuant):
         input_ids: torch.Tensor | None,
         positions: torch.Tensor,
         inputs_embeds: torch.Tensor | None,
-        encoder_outputs: list[torch.Tensor],
+        encoder_outputs: torch.Tensor | None,
     ) -> torch.Tensor:
         r"""
         Args:

@@ -41,7 +41,10 @@ def register_bart_model() -> None:
 
         install_openai_prompt_adapter()
 
-        logger.info("Successfully registered BART model with vLLM")
+        logger.info(
+            "Successfully registered %s with vLLM",
+            ", ".join(model_name for model_name, _ in _MODEL_REGISTRATIONS),
+        )
 
     except Exception as e:
         logger.error(f"Failed to register BART model: {e}")
