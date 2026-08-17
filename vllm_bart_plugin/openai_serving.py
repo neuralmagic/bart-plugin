@@ -82,10 +82,17 @@ def install_openai_prompt_adapter() -> None:
     try:
         from vllm.renderers.online_renderer import OnlineRenderer
     except ImportError:
-        logger.warning(
-            "Could not import vllm.renderers.online_renderer.OnlineRenderer; "
-            "the OpenAI completion prompt adapter is not installed. Plain "
-            "/v1/completions prompts will not be routed to the BART encoder."
-        )
-        return
-    _patch_preprocess_completion(OnlineRenderer)
+        try:
+            from vllm.entrypoints.serve.render.serving import (
+                OpenAIServingRender,
+            )
+        except ImportError:
+            logger.warning(
+                "Could not locate vLLM completion preprocessing; the OpenAI "
+                "completion prompt adapter is not installed. Plain "
+                "/v1/completions prompts will not be routed to the BART encoder."
+            )
+            return
+        _patch_preprocess_completion(OpenAIServingRender)
+    else:
+        _patch_preprocess_completion(OnlineRenderer)

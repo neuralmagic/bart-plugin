@@ -12,7 +12,7 @@ setup(
     package_data={"vllm_bart_plugin": ["py.typed"]},
     python_requires=">=3.10",
     install_requires=[
-        "vllm>=0.26.1",
+        "vllm>=0.24.0",
         "torch>=2.9.0",
         "transformers>=4.56.0",
     ],

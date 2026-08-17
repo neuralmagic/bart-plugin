@@ -41,6 +41,10 @@ def register_bart_config() -> None:
     vllm_config_module.DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES = frozenset(
         (*current, *BART_ARCHITECTURES)
     )
-    # The defaults are read through an lru_cache; drop any entry cached
-    # before the plugin loaded so the new architectures take effect.
-    vllm_config_module.default_v2_model_runner_architectures.cache_clear()
+    defaults = getattr(
+        vllm_config_module,
+        "default_v2_model_runner_architectures",
+        None,
+    )
+    if defaults is not None:
+        defaults.cache_clear()
